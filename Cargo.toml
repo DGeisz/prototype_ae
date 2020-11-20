@@ -9,3 +9,8 @@ edition = "2018"
 [dependencies]
 mccm = { path = "../mccm" }
 codexc_log = { path = "../codexc_log" }
+rand = "0.7.3"
+mnist = "0.4.1"
+rulinalg = "0.4.2"
+serde = "1.0"
+serde-pickle = "0.6"

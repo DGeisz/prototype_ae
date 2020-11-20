@@ -1,6 +1,9 @@
 use mccm::{MnistNetwork, MnistNeuron, MNIST_SIDE};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::path::Path;
+use std::fs::File;
+use std::io::Write;
 
 struct Synapse {
     measure: RefCell<f32>,
@@ -38,6 +41,23 @@ impl ProtoAENeuron {
 
         ProtoAENeuron { name, synapses }
     }
+
+    pub fn to_serializable(&self) -> Vec<Vec<f32>> {
+        let values: Vec<f32> = self.synapses.iter().map(|syn| *syn.weight.borrow()).collect();
+        let mut val_matrix = Vec::new();
+
+        for j in 0..MNIST_SIDE {
+            let mut val_row = Vec::new();
+
+            for i in 0..MNIST_SIDE {
+                val_row.push(*values.get((j * MNIST_SIDE) + i).unwrap());
+            }
+
+            val_matrix.push(val_row);
+        }
+
+        val_matrix
+    }
 }
 
 impl MnistNeuron for ProtoAENeuron {
@@ -61,6 +81,10 @@ impl MnistNeuron for ProtoAENeuron {
 
             total_weighted_measure += weighted_measure;
             total_weights += weight;
+        }
+
+        if codexc_log::run(4) {
+            println!("EM: {}", total_weighted_measure / total_weights);
         }
 
         total_weighted_measure / total_weights
@@ -91,8 +115,19 @@ impl ProtoAENetwork {
 
         ProtoAENetwork {
             learning_constant,
-            neurons
+            neurons,
         }
+    }
+
+    pub fn serialize(&self) {
+        let py_data: Vec<Vec<Vec<f32>>> = self.neurons.iter().map(|n| n.to_serializable()).collect();
+
+        let pickle = serde_pickle::to_vec(&py_data, true).unwrap();
+
+        let path = Path::new("../salusa_py/data.pickle");
+        let mut file = File::create(path).unwrap();
+
+        file.write_all(&pickle).unwrap();
     }
 }
 
@@ -118,6 +153,10 @@ impl MnistNetwork for ProtoAENetwork {
                 total_weighted_measure += weighted_measure;
                 total_weight += weight;
             }
+
+            // println!("total_weight: {}, total_weighted_measure: {}", total_weight, total_weighted_measure);
+
+            // println!("Weights: {:?}", neuron.synapses.iter().map(|syn| *syn.weight.borrow()).collect::<Vec<f32>>());
 
             total_weighted_measure_vec.push(total_weighted_measure);
             total_weight_vec.push(total_weight);
@@ -171,9 +210,24 @@ impl MnistNetwork for ProtoAENetwork {
                             - neuron_weighted_avg);
                 }
 
-                *syn.weight.borrow_mut() -= (neuron_shared_term
+
+                let adjustment = (neuron_shared_term
                     + (2.0 * zeta_vec.get(b).unwrap() * neuron_weighted_avg))
                     * self.learning_constant;
+
+                let mut weight = syn.weight.borrow_mut();
+
+                if *weight - adjustment > 0.0 {
+                    *weight -= adjustment;
+                } else {
+                    *weight = 0.0;
+                }
+
+                // println!("Adjustment: {}", adjustment);
+
+                // *syn.weight.borrow_mut() -= (neuron_shared_term
+                //     + (2.0 * zeta_vec.get(b).unwrap() * neuron_weighted_avg))
+                //     * self.learning_constant;
             }
         }
     }
